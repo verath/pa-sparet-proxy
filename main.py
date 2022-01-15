@@ -16,6 +16,8 @@ HIGHSCORE_BASE_URL = "https://highscore.prod.duo.svt.se/v1/"
 
 DUMMY_CHALLENGE = "abc"
 
+REQUEST_TIMEOUT_SEC = 30
+
 
 @dataclass(frozen=True)
 class TokenResponse:
@@ -31,7 +33,8 @@ def start_login_with_email(email):
         "challenge": DUMMY_CHALLENGE,
         "challengeMethod": "plain",
     }
-    res = requests.post(url, json=payload, headers=headers)
+    res = requests.post(
+        url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SEC)
     res.raise_for_status()
     return res.json()
 
@@ -44,7 +47,8 @@ def confirm_login_with_email(email, code):
         "code": code,
         "challengeVerifier": DUMMY_CHALLENGE,
     }
-    res = requests.post(url, json=payload, headers=headers)
+    res = requests.post(
+        url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SEC)
     res.raise_for_status()
     res_json = res.json()
     return TokenResponse(res_json["accessToken"], res_json["refreshToken"])
@@ -54,7 +58,8 @@ def token_refresh(refresh_token):
     url = f"{AUTH_BASE_URL}token/refresh"
     headers = {"User-Agent": USER_AGENT, "X-Uno-Client": UNO_CLIENT}
     payload = {"refreshToken": refresh_token}
-    res = requests.post(url, json=payload, headers=headers)
+    res = requests.post(
+        url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SEC)
     res.raise_for_status()
     res_json = res.json()
     return TokenResponse(res_json["accessToken"], res_json["refreshToken"])
@@ -68,7 +73,7 @@ def users_me_profile(access_token):
         "Authorization": "Bearer " + access_token,
         "Content-Type": "application/json",
     }
-    res = requests.get(url, headers=headers)
+    res = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SEC)
     res.raise_for_status()
     return res.json()
 
@@ -86,7 +91,8 @@ def highscore_views(access_token):
         "season": 32,
         "episode": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     }
-    res = requests.get(url, headers=headers, params=params)
+    res = requests.get(
+        url, headers=headers, params=params, timeout=REQUEST_TIMEOUT_SEC)
     res.raise_for_status()
     return res.json()
 
@@ -137,12 +143,25 @@ def main():
     # Refresh data and tokens every 1h.
     while True:
         time.sleep(60 * 60)
+
         logging.info("refreshing tokens...")
-        tokens = token_refresh(tokens.refresh_token)
+        try:
+            tokens = token_refresh(tokens.refresh_token)
+        except requests.RequestException as e:
+            logging.warning(f"failed refreshing tokens: {e}")
+            continue
+
         logging.info("refreshing highscore...")
-        highscore = highscore_views(tokens.access_token)
+        try:
+            highscore = highscore_views(tokens.access_token)
+        except requests.RequestException as e:
+            logging.warning(f"failed refreshing highscore: {e}")
+
         logging.info("refreshing me...")
-        me_profile = users_me_profile(tokens.access_token)
+        try:
+            me_profile = users_me_profile(tokens.access_token)
+        except requests.RequestException as e:
+            logging.warning(f"failed refreshing me: {e}")
 
 
 if __name__ == "__main__":
