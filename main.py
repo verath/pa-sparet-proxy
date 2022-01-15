@@ -100,7 +100,7 @@ def main():
     logging.basicConfig(
         format='[%(asctime)s - %(levelname)s][%(module)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
-        level=logging.DEBUG)
+        level=logging.INFO)
 
     # Initial login via email.
     email = input("email: ")
@@ -124,6 +124,10 @@ def main():
                 "me_profile": me_profile,
             })
             self.wfile.write(bytes(resp_json, "utf-8"))
+
+        def log_message(self, format, *args):
+            msg = "%s: %s" % (self.address_string(), format % args)
+            logging.debug(msg)
 
     httpd = HTTPServer(('', 3501), PaSparetHandler)
     httpd_thread = Thread(target=httpd_serve, args=(httpd, ))
