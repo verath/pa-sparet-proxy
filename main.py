@@ -88,7 +88,7 @@ def highscore_views(access_token):
     }
     params = {
         "app": "pa-sparet",
-        "season": 32,
+        "season": 33,
         "episode": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     }
     res = requests.get(
