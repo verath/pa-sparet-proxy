@@ -1,4 +1,3 @@
-import datetime
 import time
 import threading
 import json
@@ -6,12 +5,15 @@ import logging
 import hashlib
 import dataclasses
 
-from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from dataclasses import dataclass
 
 import requests
-from api import highscore_views, token_refresh, users_me_profile, APITokens
+from api import highscore_and_me_profile, token_refresh, APITokens
+
+
+TOKEN_REFRESH_INTERVAL = 60 * 60  # seconds
+HIGHSCORE_REFRESH_INTERVAL = 1 * 60  # seconds
 
 
 @dataclass(frozen=True)
@@ -101,34 +103,41 @@ def main():
     httpd_thread.daemon = True
     httpd_thread.start()
 
-    # Refresh data and tokens every 1h.
+    token_refresh_ts = 0
+    highscore_refresh_ts = 0
+
     while True:
-        logging.info("refreshing tokens...")
-        try:
-            tokens = token_refresh(tokens.refresh_token)
-            # Dump to .token.json file.
-            with open(".tokens.json", "w") as f:
-                json.dump(dataclasses.asdict(tokens), f)
-        except requests.RequestException as e:
-            logging.warning(f"failed refreshing tokens: {e}")
-            time.sleep(5 * 60)
-            continue
+        now = time.time()
+        token_refresh_elapsed = now - token_refresh_ts
+        highscore_refresh_elapsed = now - highscore_refresh_ts
+        should_refresh_tokens = False
+        should_refresh_highscore = False
+        if token_refresh_elapsed > TOKEN_REFRESH_INTERVAL:
+            should_refresh_tokens = True
+        if highscore_refresh_elapsed > HIGHSCORE_REFRESH_INTERVAL:
+            should_refresh_highscore = True
 
-        logging.info("refreshing highscore...")
-        try:
-            highscore = highscore_views(tokens.access_token)
-        except requests.RequestException as e:
-            logging.warning(f"failed refreshing highscore: {e}")
+        if should_refresh_tokens:
+            logging.info("refreshing tokens...")
+            try:
+                tokens = token_refresh(tokens.refresh_token)
+                token_refresh_ts = now
+                # Dump to .token.json file.
+                with open(".tokens.json", "w") as f:
+                    json.dump(dataclasses.asdict(tokens), f)
+            except requests.RequestException as e:
+                logging.warning(f"failed refreshing tokens: {e}")
 
-        logging.info("refreshing me...")
-        try:
-            me_profile = users_me_profile(tokens.access_token)
-        except requests.RequestException as e:
-            logging.warning(f"failed refreshing me: {e}")
+        if should_refresh_highscore:
+            logging.info("refreshing highscore...")
+            try:
+                highscore, me_profile = highscore_and_me_profile(tokens.access_token)
+                set_highscore_data(highscore, me_profile)
+                highscore_refresh_ts = now
+            except requests.RequestException as e:
+                logging.warning(f"failed refreshing highscore: {e}")
 
-        set_highscore_data(highscore, me_profile)
-
-        time.sleep(60 * 60)
+        time.sleep(1)
 
 
 if __name__ == "__main__":

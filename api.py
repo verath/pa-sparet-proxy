@@ -91,3 +91,9 @@ def highscore_views(access_token):
         url, headers=headers, params=params, timeout=REQUEST_TIMEOUT_SEC)
     res.raise_for_status()
     return res.json()
+
+
+def highscore_and_me_profile(access_token):
+    highscore = highscore_views(access_token)
+    me_profile = users_me_profile(access_token)
+    return highscore, me_profile
