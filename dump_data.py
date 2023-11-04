@@ -2,7 +2,7 @@ import argparse
 import dataclasses
 import json
 
-import api
+import duo
 
 
 def main():
@@ -10,20 +10,20 @@ def main():
     parser.add_argument("out", type=argparse.FileType("w"))
     args = parser.parse_args()
 
-    # Read tokens.
-    with open(".tokens.json") as f:
-        tokens_json = json.load(f)
-        tokens = api.APITokens(**tokens_json)
+    tokens = duo.read_api_tokens()
+    tokens = duo.token_refresh(tokens.refresh_token)
+    duo.write_api_tokens(tokens)
 
-    # Refresh and store tokens.
-    tokens = api.token_refresh(tokens.refresh_token)
-    with open(".tokens.json", "w") as f:
-        json.dump(dataclasses.asdict(tokens), f)
+    episode_scores = duo.get_highscores(tokens.access_token)
+    me = duo.get_me(tokens.access_token)
+    friends = duo.get_me_friends(tokens.access_token)
+    users = [me] + friends
 
-    highscore = api.highscore_views(tokens.access_token)
-    me_profile = api.users_me_profile(tokens.access_token)
-    json_data = {"highscore": highscore, "me_profile": me_profile}
-    json.dump(json_data, args.out)
+    dump = {
+        "episode_scores": [dataclasses.asdict(v) for v in episode_scores],
+        "users": [dataclasses.asdict(v) for v in users]
+    }
+    json.dump(dump, args.out)
 
 
 if __name__ == "__main__":

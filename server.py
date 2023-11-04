@@ -9,7 +9,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from dataclasses import dataclass
 
 import requests
-from api import highscore_and_me_profile, token_refresh, APITokens
+
+import duo
 
 
 TOKEN_REFRESH_INTERVAL = 60 * 60  # seconds
@@ -24,12 +25,12 @@ class HighscoreData:
 
 g_highscore_data_lock = threading.Lock()
 g_highscore_data = HighscoreData("", "")
-def set_highscore_data(highscore: dict, me_profile: dict):
+def set_highscore_data(episode_scores: list[duo.EpisodeScores], users: list[duo.User]):
     global g_highscore_data_lock
     global g_highscore_data
     json_data = json.dumps({
-            "highscore": highscore,
-            "me_profile": me_profile
+            "episode_scores": [dataclasses.asdict(v) for v in episode_scores],
+            "users": [dataclasses.asdict(v) for v in users]
         })
     json_data_hash = hashlib.md5(json_data.encode('utf-8')).hexdigest()
 
@@ -93,51 +94,46 @@ def main():
         level=logging.INFO)
 
     # Read tokens.
-    with open(".tokens.json") as f:
-        tokens_json = json.load(f)
-        tokens = APITokens(**tokens_json)
+    tokens = duo.read_api_tokens()
 
-    # Run an http server dumping the highscore and "me" data for all requests.
     httpd = HTTPServer(('', 3501), PaSparetHandler)
     httpd_thread = threading.Thread(target=httpd_serve, args=(httpd, ))
     httpd_thread.daemon = True
     httpd_thread.start()
 
+    def should_do(last: int, interval: int) -> bool:
+        now = time.time()
+        elapsed = now - last
+        return  elapsed >= interval
+
     token_refresh_ts = 0
     highscore_refresh_ts = 0
-
     while True:
-        now = time.time()
-        token_refresh_elapsed = now - token_refresh_ts
-        highscore_refresh_elapsed = now - highscore_refresh_ts
-        should_refresh_tokens = False
-        should_refresh_highscore = False
-        if token_refresh_elapsed > TOKEN_REFRESH_INTERVAL:
-            should_refresh_tokens = True
-        if highscore_refresh_elapsed > HIGHSCORE_REFRESH_INTERVAL:
-            should_refresh_highscore = True
+        do_tokens = should_do(token_refresh_ts, TOKEN_REFRESH_INTERVAL)
+        do_highscore = should_do(highscore_refresh_ts, HIGHSCORE_REFRESH_INTERVAL)
 
-        if should_refresh_tokens:
+        if do_tokens:
             logging.info("refreshing tokens...")
             try:
-                tokens = token_refresh(tokens.refresh_token)
-                token_refresh_ts = now
-                # Dump to .token.json file.
-                with open(".tokens.json", "w") as f:
-                    json.dump(dataclasses.asdict(tokens), f)
+                tokens = duo.token_refresh(tokens.refresh_token)
+                duo.write_api_tokens(tokens)
+                token_refresh_ts = time.time()
             except requests.RequestException as e:
                 logging.warning(f"failed refreshing tokens: {e}")
 
-        if should_refresh_highscore:
+        if do_highscore:
             logging.info("refreshing highscore...")
             try:
-                highscore, me_profile = highscore_and_me_profile(tokens.access_token)
-                set_highscore_data(highscore, me_profile)
-                highscore_refresh_ts = now
+                episode_scores = duo.get_highscores(tokens.access_token)
+                me = duo.get_me(tokens.access_token)
+                friends = duo.get_me_friends(tokens.access_token)
+                users = [me] + friends
+                set_highscore_data(episode_scores, users)
+                highscore_refresh_ts = time.time()
             except requests.RequestException as e:
                 logging.warning(f"failed refreshing highscore: {e}")
 
-        time.sleep(1)
+        time.sleep(1.0)
 
 
 if __name__ == "__main__":
