@@ -1,3 +1,4 @@
+import argparse
 import time
 import threading
 import json
@@ -83,6 +84,11 @@ class PaSparetHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--host", type=str, default="0.0.0.0")
+    args = parser.parse_args()
+
     def httpd_serve(httpd):
         with httpd:
             logging.info(f"httpd running at {httpd.server_address}")
@@ -96,7 +102,7 @@ def main():
     # Read tokens.
     tokens = duo.read_api_tokens()
 
-    httpd = HTTPServer(('', 3501), PaSparetHandler)
+    httpd = HTTPServer((args.host, args.port), PaSparetHandler)
     httpd_thread = threading.Thread(target=httpd_serve, args=(httpd, ))
     httpd_thread.daemon = True
     httpd_thread.start()
@@ -119,6 +125,7 @@ def main():
                 duo.write_api_tokens(tokens)
                 token_refresh_ts = time.time()
             except requests.RequestException as e:
+                time.sleep(10)
                 logging.warning(f"failed refreshing tokens: {e}")
 
         if do_highscore:
@@ -131,6 +138,7 @@ def main():
                 set_highscore_data(episode_scores, users)
                 highscore_refresh_ts = time.time()
             except requests.RequestException as e:
+                time.sleep(10)
                 logging.warning(f"failed refreshing highscore: {e}")
 
         time.sleep(1.0)
