@@ -133,8 +133,8 @@ def get_highscores(access_token) -> list[EpisodeScores]:
     }
     params = {
         "key": "pa-sparet",
-        "season": 34,
-        "episode": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+        "season": 35,
+        "episode": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
     }
     res = requests.get(
         url, headers=headers, params=params, timeout=REQUEST_TIMEOUT_SEC)
