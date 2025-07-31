@@ -83,6 +83,13 @@ class PaSparetHandler(BaseHTTPRequestHandler):
         logging.debug(msg)
 
 
+def log_failed_request(msg: str, exc: requests.RequestException):
+    err = f"request failed: {exc}"
+    if exc.response:
+        err += f"\nstatus code: {exc.response.status_code}"
+        err += f"\nresponse body: {exc.response.text}"
+    logging.error(f"{msg}: {err}")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8080)
@@ -107,16 +114,17 @@ def main():
     httpd_thread.daemon = True
     httpd_thread.start()
 
-    def should_do(last: int, interval: int) -> bool:
+    def interval_elapsed(last: int, interval: int) -> bool:
         now = time.time()
         elapsed = now - last
         return  elapsed >= interval
 
     token_refresh_ts = 0
     highscore_refresh_ts = 0
+    token_valid = True
     while True:
-        do_tokens = should_do(token_refresh_ts, TOKEN_REFRESH_INTERVAL)
-        do_highscore = should_do(highscore_refresh_ts, HIGHSCORE_REFRESH_INTERVAL)
+        do_tokens = interval_elapsed(token_refresh_ts, TOKEN_REFRESH_INTERVAL)
+        do_highscore = token_valid and interval_elapsed(highscore_refresh_ts, HIGHSCORE_REFRESH_INTERVAL)
 
         if do_tokens:
             logging.info("refreshing tokens...")
@@ -124,9 +132,13 @@ def main():
                 tokens = duo.token_refresh(tokens.refresh_token)
                 duo.write_api_tokens(tokens)
                 token_refresh_ts = time.time()
-            except requests.RequestException as e:
+                token_valid = True
+            except requests.RequestException as exc:
+                log_failed_request("failed refreshing tokens", exc)
+                if exc.response and exc.response.status_code == 401:
+                    token_valid = False
+                    continue
                 time.sleep(10)
-                logging.warning(f"failed refreshing tokens: {e}")
 
         if do_highscore:
             logging.info("refreshing highscore...")
@@ -137,9 +149,9 @@ def main():
                 users = [me] + friends
                 set_highscore_data(episode_scores, users)
                 highscore_refresh_ts = time.time()
-            except requests.RequestException as e:
+            except requests.RequestException as exc:
+                log_failed_request("failed refreshing highscore", exc)
                 time.sleep(10)
-                logging.warning(f"failed refreshing highscore: {e}")
 
         time.sleep(1.0)
 
